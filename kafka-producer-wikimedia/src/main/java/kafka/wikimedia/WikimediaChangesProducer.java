@@ -28,6 +28,31 @@ public class WikimediaChangesProducer {
         properties.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
+        ////////////////////////////////////////// SAFE PRODUCER SETTINGS //////////////////////////////////////////
+        // Enabled by default for me because it is 3.5.0
+
+        // If idempotence, try once, commit and ack
+        // Try twice, network error
+        // Try thrice, will see that data is already duplicated, will not commit but send an ack
+        properties.setProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+
+        // Acknowledge after every commit
+        properties.setProperty(ProducerConfig.ACKS_CONFIG, "all"); // Same as -1
+
+        // Retry "infinite times" until a delivery.timeout.ms is reached
+        properties.setProperty(ProducerConfig.RETRIES_CONFIG, Integer.toString(Integer.MAX_VALUE));
+
+        ////////////////////////////////////////// SAFE PRODUCER SETTINGS //////////////////////////////////////////
+
+        // -------------------------------- Message compression at Producer level -------------------------------- \\
+        // Advantages:
+        // Smaller producer request size
+        // Faster to transfer data
+
+        // ----------------------------- Message compression at Broker/Topic level ----------------------------- \\
+        // Can set to all topics or let it be topic-level
+        // Extra CPU cycles
+
 
         // Create the producer
         // Passing properties as a constructor param
