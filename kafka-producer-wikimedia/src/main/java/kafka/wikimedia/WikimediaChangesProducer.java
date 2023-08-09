@@ -53,6 +53,23 @@ public class WikimediaChangesProducer {
         // Can set to all topics or let it be topic-level
         // Extra CPU cycles
 
+        // Batching is good, helps with compression as well \\
+        // linger.ms = default 0 How long to wait until we send a batch
+        // batch.size = if batch is filled before l.m, increase batch size
+        // Make batch until linger.ms, send it after ms time
+        // Batch size \\
+        // Any message bigger than size, gets sent right away
+        // SNAPPY \\
+
+        // Set high throughput producer configs
+        properties.setProperty(ProducerConfig.LINGER_MS_CONFIG, "20"); // At expense of 20 miliseconds
+        properties.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(32 * 1024));
+        properties.setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
+
+        // Key Hashing determines map of key to a partition
+        // Murmur2 algo is used to determine keys because it is predictable
+        // Key = NULL, then because its Kafka 3.5, the default way of partitioning is by using sticky partitioner // Larger batches, less latency
+        // If its <=v2.3, then the round-robin method is used // Results in more batches, not optimal
 
         // Create the producer
         // Passing properties as a constructor param
