@@ -1,0 +1,1 @@
+The bash file "start_kafka.sh" helps start a new kafka session.
