@@ -1,6 +1,8 @@
 package kafka.opensearch;
 
+import com.carrotsearch.hppc.HashOrderMixing;
 import com.fasterxml.jackson.dataformat.yaml.util.StringQuotingChecker;
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
@@ -91,6 +93,17 @@ public class OpenSearchConsumer {
         return new KafkaConsumer<>(properties);
     }
 
+    private static String extractID(String json)
+    {
+        // Gson library from Google
+        return JsonParser.parseString(json)
+                .getAsJsonObject()
+                .get("meta")
+                .getAsJsonObject()
+                .get("id")
+                .getAsString();
+    }
+
     public static void main(String[] args) throws IOException {
         // Logger to keep track of logs
         Logger log = LoggerFactory.getLogger(OpenSearchConsumer.class.getSimpleName());
@@ -132,11 +145,23 @@ public class OpenSearchConsumer {
                 for(ConsumerRecord<String, String> record : records)
                 {
 
-                    // Send record int OpenSearch
+                    // Delivery semantics
+                    // At most once - Offsets committed as soon as the message is received, if processing is wrong, messages are lost
+                    // At least once - Offsets committed after message processes, processing wrong, message read again // Duplication // Make sure idempotent setting is on
 
+                    // Send record into OpenSearch
                     try {
+
+                        // To make the consumer idempotent
+                        // Strategy 1: Make a unique ID manually
+                        // Define an ID using Kafka Record coordinates
+//                      String id = record.topic() + "_" + record.partition() + "_" + record.offset(); // Unique for each one
+
+                        // Strategy 2: Take ID that is the part of the meta data
+                        String id = extractID(record.value());
+
                         IndexRequest indexRequest = new IndexRequest("wikimedia")
-                                .source(record.value(), XContentType.JSON);
+                                .source(record.value(), XContentType.JSON).id(id);
 
                         // Send it to openSearch
                         IndexResponse response = openSearchClient.index(indexRequest, RequestOptions.DEFAULT);
