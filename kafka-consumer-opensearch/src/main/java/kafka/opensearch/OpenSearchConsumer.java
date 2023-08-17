@@ -135,6 +135,7 @@ public class OpenSearchConsumer {
             // Subscribing to consumers
             consumer.subscribe(Collections.singleton("wikimedia.recentchange"));
 
+            // Keep consuming forever
             while(true)
             {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(3000));
@@ -166,8 +167,23 @@ public class OpenSearchConsumer {
                         // Send it to openSearch
                         IndexResponse response = openSearchClient.index(indexRequest, RequestOptions.DEFAULT);
 
+                        // Consumer Offset Commit Strategies
+                        // Default:
+                        // easy // enable.auto.commit = True and synchronous processing of batches
+                        // Committed when .poll() called and auto.commit.interval.ms has elapsed
+                        // Make sure messages are processes, only then call .poll()
+                        // If interval is 5 ms: poll, poll, poll, 6 ms, batch of 3 messages gets processed and committed
+                        // At most behavior if not synchronous
+
+
+                        // Not default:
+                        // medium // enable.auto.commit = False and manual commit of offsets
+                        // Advanced
+                        // Manual consumer, need to use .seek() API
+
                         // Logs purposes
                         log.info(response.getId());
+
                     } catch (Exception e){
 
                     }
