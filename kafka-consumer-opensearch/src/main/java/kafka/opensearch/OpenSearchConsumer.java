@@ -12,7 +12,10 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.opensearch.action.bulk.BulkRequest;
+import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.index.IndexResponse;
 import org.opensearch.client.RequestOptions;
@@ -114,6 +117,25 @@ public class OpenSearchConsumer {
         // Create our Kafka Client
         KafkaConsumer<String, String> consumer = createKafkaConsumer();
 
+        // Get a reference to the main thread
+        final Thread mainThread = Thread.currentThread();
+
+        // Adding the shutdown hook
+        // Trick to exit while loop
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                log.info("Detected a shutdown, let's exit by calling consumer.wakeup()...");
+                consumer.wakeup();
+
+                // join the main thread to allow the execution of the code in the main thread
+                try {
+                    mainThread.join();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+
         // Create the index on OpenSearch if it doesn't exist already
         // Instead of closing, we can do try
 
@@ -136,12 +158,15 @@ public class OpenSearchConsumer {
             consumer.subscribe(Collections.singleton("wikimedia.recentchange"));
 
             // Keep consuming forever
-            while(true)
+            while (true)
             {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(3000));
 
                 int recordCount = records.count();
                 log.info("Received " + recordCount + " record(s)");
+
+                // Bulk request more efficient compared to having a response of individual request
+                BulkRequest bulkRequest = new BulkRequest();
 
                 for(ConsumerRecord<String, String> record : records)
                 {
@@ -165,7 +190,9 @@ public class OpenSearchConsumer {
                                 .source(record.value(), XContentType.JSON).id(id);
 
                         // Send it to openSearch
-                        IndexResponse response = openSearchClient.index(indexRequest, RequestOptions.DEFAULT);
+//                        IndexResponse response = openSearchClient.index(indexRequest, RequestOptions.DEFAULT);
+
+                        bulkRequest.add(indexRequest);
 
                         // Consumer Offset Commit Strategies
                         // Default:
@@ -182,20 +209,51 @@ public class OpenSearchConsumer {
                         // Manual consumer, need to use .seek() API
 
                         // Logs purposes
-                        log.info(response.getId());
+//                        log.info(response.getId());
 
                     } catch (Exception e){
 
                     }
 
                 }
+
+                if (bulkRequest.numberOfActions() > 0){
+                    BulkResponse bulkResponse = openSearchClient.bulk(bulkRequest, RequestOptions.DEFAULT);
+                    log.info("Inserted " + bulkResponse.getItems().length + " record(s).");
+
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+
+                    // commit offsets after the batch is consumed
+                    consumer.commitSync();
+                    log.info("Offsets have been committed!");
+                }
+
+                // So that offsets don't get reset after 7 days of no new data
+                // offset.retention.minutes ~People set it to about a month usually
+
+                // HOW TO REPLAY DATA: FOR THE CONSUMERS
+                // 1. Take all consumers from a specific group down
+                // 2. Kafka-consumer-groups command to set offset to what we want
+                // 3. Restart consumers
             }
 
+        } catch (WakeupException e)
+        {
+            log.info("Consumer is starting to shutdown");
         }
-
-        // Main code logic
-
-        // Close things
+        catch (Exception e)
+        {
+            log.error("Unexpected exception in the consumer", e);
+        }
+        finally {
+            consumer.close(); // Also commit offset
+            openSearchClient.close();
+            log.info("The consumer is now gracefully shut down");
+        }
 
     }
 
